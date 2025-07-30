@@ -1,15 +1,20 @@
 # DataDog to Honeycomb Pipeline Demo
 
+> **Note**: This is a stop-gap solution before moving to OpenTelemetry agents. DataDog agents can be overly chatty, and the OpenTelemetry Collector is still highly recommended for production use.
+
 This project demonstrates two methods for using OpenTelemetry Collector to receive telemetry data from DataDog applications and route it to different destinations based on your observability strategy.
 
 ## Dual-Path Architecture
 
 This setup provides two distinct data paths:
 
-### Method 1: Full Dual Shipping (DD + Honeycomb)
+### Method 1: Full Dual Shipping (DD + Honeycomb) ✅ TESTED & WORKING
 ```
 DataDog App/Agent → OTel Collector (ports 8125/8126) → DataDog + Honeycomb
 ```
+**Status**: Successfully tested - traces and metrics flowing to Honeycomb. DataDog export is configured but commented out in the collector config. To enable dual shipping to DataDog, uncomment the DataDog exporter in `otel-collector-config.yaml` and add your DataDog API key.
+
+**Alternative**: OpenTelemetry can be used in place of the DataDog agent for dual send, providing better control over telemetry data and reducing chattiness.
 
 ### Method 2: Honeycomb-Only Path (Cost Optimization) 
 ```
@@ -20,11 +25,17 @@ Both methods use DataDog receiver protocols but offer different export destinati
 
 ## Prerequisites
 
+### Option 1: Kubernetes with Tilt
 - [Tilt](https://tilt.dev/) for local development
 - [kubectl](https://kubernetes.io/docs/tasks/tools/) for Kubernetes access
 - A local or remote Kubernetes cluster (Docker Desktop, minikube, kind, etc.)
 
+### Option 2: Docker Compose
+- [Docker](https://docs.docker.com/get-docker/) and Docker Compose
+
 ## Setup
+
+### Option 1: Kubernetes with Tilt
 
 1. **Clone and navigate to the project:**
    ```bash
@@ -47,6 +58,35 @@ Both methods use DataDog receiver protocols but offer different export destinati
    This will:
    - Build the sample application Docker image
    - Deploy all services to your Kubernetes cluster
+
+### Option 2: Docker Compose
+
+1. **Clone and navigate to the project:**
+   ```bash
+   cd datadog-otel-pipeline
+   ```
+
+2. **Set up environment variables:**
+   ```bash
+   cp .env.example .env
+   # Edit .env with your API keys:
+   # HONEYCOMB_API_KEY=your_honeycomb_api_key
+   # DATADOG_API_KEY=your_datadog_api_key (only needed for Method 1 dual shipping)
+   ```
+
+3. **Start the services:**
+   ```bash
+   # Method 1: Start sample app + OTel collector (recommended)
+   docker-compose up sample-app otel-collector --build -d
+   
+   # Or start all services including DataDog agent
+   docker-compose up --build -d
+   ```
+
+   This will:
+   - Build the sample application Docker image
+   - Start OpenTelemetry Collector on ports 8125/8126 (Method 1) and 8135/8136 (Method 2)
+   - Start sample app on port 3000
    - Set up port forwarding for local access
    - Provide a web UI at `http://localhost:10350`
 
@@ -140,26 +180,41 @@ Configure your DataDog Agent to send data to both DataDog and Method 2 collector
 
 ```yaml
 # datadog.yaml
+api_key: "your-primary-datadog-api-key"  # Primary DataDog destination
+site: "datadoghq.com"
+
 # APM traces dual shipping
 apm_config:
   additional_endpoints:
+    "https://trace-intake.datadoghq.com":  # Secondary DataDog org (optional)
+      - "your-secondary-datadog-api-key"
     "http://localhost:8136":  # Method 2 collector APM port
-      - "dummy-key"  # OTel collector doesn't need real DD API key
+      - "dummy-key"  # OTel collector doesn't validate DD API key
 
-# Metrics dual shipping  
-additional_endpoints:
-  "http://localhost:8135":  # Method 2 collector StatsD port
-    - "dummy-key"  # OTel collector doesn't need real DD API key
+# StatsD metrics dual shipping
+dogstatsd_config:
+  additional_endpoints:
+    - host: "localhost"
+      port: 8135  # Method 2 collector StatsD port
 ```
 
 Or using environment variables:
 ```bash
-# APM dual shipping
-DD_APM_ADDITIONAL_ENDPOINTS='{"http://localhost:8136": ["dummy-key"]}'
+# Primary DataDog configuration
+DD_API_KEY=your-primary-datadog-api-key
+DD_SITE=datadoghq.com
 
-# Metrics dual shipping  
-DD_ADDITIONAL_ENDPOINTS='{"http://localhost:8135": ["dummy-key"]}'
+# APM dual shipping
+DD_APM_ADDITIONAL_ENDPOINTS='{
+  "https://trace-intake.datadoghq.com": ["your-secondary-datadog-api-key"],
+  "http://localhost:8136": ["dummy-key"]
+}'
+
+# StatsD metrics dual shipping  
+DD_DOGSTATSD_ADDITIONAL_ENDPOINTS='localhost:8135'
 ```
+
+**Note**: For the OpenTelemetry collector endpoint (`localhost:8136`), you can use "dummy-key" since the collector doesn't validate DataDog API keys. For actual DataDog endpoints, you need real API keys.
 
 #### Application Configuration (No Changes Needed)
 Your applications continue using standard DataDog configuration:
