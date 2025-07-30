@@ -33,9 +33,6 @@ processors:
   # Resource processor to add/modify resource attributes
   resource:
     attributes:
-      - key: service.name
-        value: "datadog-pipeline-method2"
-        action: upsert
       - key: deployment.environment
         value: "demo"
         action: upsert
