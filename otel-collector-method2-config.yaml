@@ -1,0 +1,81 @@
+receivers:
+  # DataDog receiver for StatsD metrics (Method 2 - Honeycomb only)
+  statsd:
+    endpoint: 0.0.0.0:8135
+    aggregation_interval: 60s
+    enable_metric_type: false
+    is_monotonic_counter: false
+
+  # DataDog APM receiver for traces (Method 2 - Honeycomb only)
+  datadog:
+    endpoint: 0.0.0.0:8136
+    
+  # OTLP receiver for additional telemetry
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4327
+      http:
+        endpoint: 0.0.0.0:4328
+
+processors:
+  # Batch processor for better performance
+  batch:
+    timeout: 1s
+    send_batch_size: 1024
+    send_batch_max_size: 2048
+    
+  # Memory limiter to prevent OOMKill
+  memory_limiter:
+    limit_mib: 256
+    check_interval: 1s
+    
+  # Resource processor to add/modify resource attributes
+  resource:
+    attributes:
+      - key: service.name
+        value: "datadog-pipeline-method2"
+        action: upsert
+      - key: deployment.environment
+        value: "demo"
+        action: upsert
+      - key: collection.method
+        value: "method2-honeycomb-only"
+        action: upsert
+
+exporters:
+  # Export traces to Honeycomb only (dataset auto-created from service name)
+  otlp/honeycomb-traces:
+    endpoint: https://api.honeycomb.io:443
+    headers:
+      "x-honeycomb-team": "${HONEYCOMB_API_KEY}"
+      
+  # Export metrics to Honeycomb only (requires explicit dataset)
+  otlp/honeycomb-metrics:
+    endpoint: https://api.honeycomb.io:443
+    headers:
+      "x-honeycomb-team": "${HONEYCOMB_API_KEY}"
+      "x-honeycomb-dataset": "datadog-metrics-method2"
+    
+  # Debug exporter for troubleshooting
+  debug:
+    verbosity: detailed
+
+service:
+  pipelines:
+    # Traces pipeline: DD receiver format -> Honeycomb ONLY (no DD export)
+    traces:
+      receivers: [datadog, otlp]
+      processors: [memory_limiter, resource, batch]
+      exporters: [otlp/honeycomb-traces, debug]
+      
+    # Metrics pipeline: StatsD -> Honeycomb ONLY (no DD export)
+    metrics:
+      receivers: [statsd, otlp]
+      processors: [memory_limiter, resource, batch]
+      exporters: [otlp/honeycomb-metrics, debug]
+      
+  extensions: []
+  telemetry:
+    logs:
+      level: "info"

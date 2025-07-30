@@ -1,0 +1,14 @@
+{
+  "name": "datadog-pipeline-sample-app",
+  "version": "1.0.0",
+  "description": "Sample application for DataDog to Honeycomb pipeline demo",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "dd-trace": "^4.17.0",
+    "hot-shots": "^10.0.0"
+  }
+}

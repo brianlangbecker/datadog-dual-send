@@ -1,0 +1,62 @@
+version: '3.8'
+
+services:
+  # OpenTelemetry Collector - Method 1 (Dual shipping to DD + Honeycomb)
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:latest
+    command: ["--config=/etc/otel-collector-config.yaml"]
+    volumes:
+      - ./otel-collector-config.yaml:/etc/otel-collector-config.yaml
+    ports:
+      - "8125:8125/udp"  # StatsD receiver
+      - "8126:8126"      # DataDog APM receiver
+      - "4317:4317"      # OTLP gRPC receiver (default port)
+      - "4318:4318"      # OTLP HTTP receiver (default port)
+      - "8888:8888"      # Prometheus metrics endpoint
+    environment:
+      - HONEYCOMB_API_KEY=${HONEYCOMB_API_KEY}
+      - DATADOG_API_KEY=${DATADOG_API_KEY}
+
+  # OpenTelemetry Collector - Method 2 (Honeycomb only, no DD export)
+  otel-collector-method2:
+    image: otel/opentelemetry-collector-contrib:latest
+    command: ["--config=/etc/otel-collector-method2-config.yaml"]
+    volumes:
+      - ./otel-collector-method2-config.yaml:/etc/otel-collector-method2-config.yaml
+    ports:
+      - "8135:8135/udp"  # StatsD receiver (Method 2)
+      - "8136:8136"      # DataDog APM receiver (Method 2)
+      - "4327:4327"      # OTLP gRPC receiver (Method 2)
+      - "4328:4328"      # OTLP HTTP receiver (Method 2)
+      - "8889:8888"      # Prometheus metrics endpoint (Method 2)
+    environment:
+      - HONEYCOMB_API_KEY=${HONEYCOMB_API_KEY}
+
+  # Sample application that generates telemetry data
+  sample-app:
+    build: ./sample-app
+    ports:
+      - "3000:3000"
+    environment:
+      - DD_AGENT_HOST=otel-collector
+      - DD_TRACE_AGENT_PORT=8126
+      - DD_DOGSTATSD_PORT=8125
+    depends_on:
+      - otel-collector
+
+  # DataDog Agent (optional, for comparison)
+  datadog-agent:
+    image: gcr.io/datadoghq/agent:latest
+    environment:
+      - DD_API_KEY=${DATADOG_API_KEY}
+      - DD_SITE=datadoghq.com
+      - DD_APM_ENABLED=true
+      - DD_APM_NON_LOCAL_TRAFFIC=true
+      - DD_DOGSTATSD_NON_LOCAL_TRAFFIC=true
+    ports:
+      - "8127:8126"  # APM
+      - "8124:8125/udp"  # DogStatsD
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /proc/:/host/proc/:ro
+      - /sys/fs/cgroup/:/host/sys/fs/cgroup:ro

@@ -1,0 +1,83 @@
+receivers:
+  # DataDog receiver for StatsD metrics
+  statsd:
+    endpoint: 0.0.0.0:8125
+    aggregation_interval: 60s
+    enable_metric_type: false
+    is_monotonic_counter: false
+
+  # DataDog APM receiver for traces
+  datadog:
+    endpoint: 0.0.0.0:8126
+    
+  # OTLP receiver for additional telemetry
+  otlp:
+    protocols:
+      grpc:
+      http:
+
+processors:
+  # Batch processor for better performance
+  batch:
+    timeout: 1s
+    send_batch_size: 1024
+    send_batch_max_size: 2048
+    
+  # Memory limiter to prevent OOMKill
+  memory_limiter:
+    limit_mib: 256
+    check_interval: 1s
+    
+  # Resource processor to add/modify resource attributes
+  resource:
+    attributes:
+      - key: service.name
+        value: "datadog-pipeline-demo"
+        action: upsert
+      - key: deployment.environment
+        value: "demo"
+        action: upsert
+
+exporters:
+  # Export traces to Honeycomb (dataset auto-created from service name)
+  otlp/honeycomb-traces:
+    endpoint: https://api.honeycomb.io:443
+    headers:
+      "x-honeycomb-team": "${HONEYCOMB_API_KEY}"
+      
+  # Export metrics to Honeycomb (requires explicit dataset)
+  otlp/honeycomb-metrics:
+    endpoint: https://api.honeycomb.io:443
+    headers:
+      "x-honeycomb-team": "${HONEYCOMB_API_KEY}"
+      "x-honeycomb-dataset": "datadog-metrics"
+    
+  # Export back to DataDog
+  # NOTE: Uncomment the DataDog exporter below when ready to send data to DataDog
+  # datadog/export:
+  #   api:
+  #     key: "${DATADOG_API_KEY}"
+  #     site: "datadoghq.com"
+    
+  # Debug exporter for troubleshooting
+  debug:
+    verbosity: detailed
+
+service:
+  pipelines:
+    # Traces pipeline: DD -> Honeycomb (+ DD when uncommented)
+    traces:
+      receivers: [datadog, otlp]
+      processors: [memory_limiter, resource, batch]
+      exporters: [otlp/honeycomb-traces, debug]  # Add datadog/export when ready
+      
+    # Metrics pipeline: StatsD -> Honeycomb (+ DD when uncommented)
+    metrics:
+      receivers: [statsd, otlp]
+      processors: [memory_limiter, resource, batch]
+      exporters: [otlp/honeycomb-metrics, debug]  # Add datadog/export when ready
+      
+  extensions: []
+  telemetry:
+    logs:
+      level: "info"
